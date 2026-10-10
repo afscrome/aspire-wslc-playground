@@ -62,11 +62,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "WSLc runtime check failed: $LASTEXITCODE" }
 
       - name: Install latest daily Aspire CLI
+        timeout-minutes: 10
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'aspire-install.ps1'
-          Invoke-WebRequest https://aspire.dev/install.ps1 -OutFile $installer
-          & $installer -Quality dev -SkipPath
-          if ($LASTEXITCODE -ne 0) { throw "Aspire installation failed: $LASTEXITCODE" }
+          Invoke-WebRequest https://aspire.dev/install.ps1 -OutFile $installer -MaximumRetryCount 3 -RetryIntervalSec 5
+          $PSNativeCommandUseErrorActionPreference = $false
+          $installed = $false
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            Write-Host "Installing latest daily Aspire CLI: attempt $attempt of 5"
+            # A child process lets installer errors/exit statements return to this retry loop.
+            & pwsh -NoProfile -File $installer -Quality dev -SkipPath
+            if ($LASTEXITCODE -eq 0) {
+              $installed = $true
+              break
+            }
+            if ($attempt -lt 5) {
+              Write-Warning "Aspire installation failed with exit code $LASTEXITCODE; retrying in 15 seconds."
+              Start-Sleep -Seconds 15
+            }
+          }
+          if (-not $installed) { throw 'Aspire installation failed after 5 attempts' }
           $cliDirectory = Join-Path $env:USERPROFILE '.aspire/bin'
           $cliPath = Join-Path $cliDirectory 'aspire.exe'
           $cliDirectory | Out-File $env:GITHUB_PATH -Append

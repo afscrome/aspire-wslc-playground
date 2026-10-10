@@ -41,3 +41,5 @@ Validation passed on 2026-10-10 using the existing installed CLI `17.0.0-preview
 ## Windows GitHub Actions
 
 The Windows-only CI workflow adapts the reusable workflow structure from [aspire-dotnet-jwts](https://github.com/afscrome/aspire-dotnet-jwts/blob/main/.github/workflows/ci.yml). It logs `wsl --version`, whether `Get-Command wslc` succeeds, and `wslc version` before upgrading. Each run installs prerelease WSL and the latest daily Aspire CLI (`-Quality dev`), builds the solution, starts AppHost, waits for Redis and the frontend, verifies Redis appears in `wslc ps`, stops AppHost, and runs the integration tests. Logs and build diagnostics are uploaded even when a step fails.
+
+Daily CLI installation retries up to five times, waiting 15 seconds between attempts, to tolerate the upstream download/checksum mismatch. Checksum validation stays enabled. The development certificate is exported and imported into the runner's machine root store to avoid the Windows user-store confirmation dialog.
