@@ -80,7 +80,15 @@ jobs:
           dotnet restore AspireSample.sln --verbosity minimal -bl:artifacts/binlogs/restore.binlog
 
       - name: Trust development certificate
-        run: dotnet dev-certs https --trust
+        timeout-minutes: 2
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'aspire-dev-cert.pem'
+          dotnet dev-certs https --export-path $certificatePath --format PEM
+          if ($LASTEXITCODE -ne 0) { throw 'Development certificate export failed' }
+          # Import into the machine store to avoid the current-user trust dialog.
+          Import-Certificate -FilePath $certificatePath -CertStoreLocation Cert:\LocalMachine\Root -Confirm:$false
+          dotnet dev-certs https --check --trust
+          if ($LASTEXITCODE -ne 0) { throw 'Development certificate is not trusted' }
 
       - name: Build
         run: dotnet build AspireSample.sln --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true -bl:artifacts/binlogs/build.binlog
