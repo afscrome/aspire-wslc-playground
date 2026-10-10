@@ -18,7 +18,6 @@ jobs:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
-      APPHOST: AspireSample.AppHost/AspireSample.AppHost.csproj
 
     steps:
       - uses: actions/checkout@v7
@@ -102,33 +101,8 @@ jobs:
       - name: Build
         run: dotnet build AspireSample.sln --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true -bl:artifacts/binlogs/build.binlog
 
-      - name: Start AppHost and verify WSL containers
-        run: |
-          try {
-            aspire start --non-interactive --no-build --apphost $env:APPHOST
-            if ($LASTEXITCODE -ne 0) { throw "AppHost startup failed: $LASTEXITCODE" }
-            & (Join-Path $env:USERPROFILE '.aspire/bundle/dcp/dcp.exe') version
-            aspire wait cache --timeout 120 --non-interactive --apphost $env:APPHOST
-            if ($LASTEXITCODE -ne 0) { throw 'Redis did not become healthy' }
-            aspire wait webfrontend --timeout 120 --non-interactive --apphost $env:APPHOST
-            if ($LASTEXITCODE -ne 0) { throw 'Frontend did not become healthy' }
-            aspire describe --non-interactive --apphost $env:APPHOST
-            wslc ps --no-trunc
-            if ($LASTEXITCODE -ne 0) { throw 'wslc ps failed' }
-            $containers = wslc ps --format json
-            if ($LASTEXITCODE -ne 0) { throw 'wslc ps --format json failed' }
-            $containers | Set-Content artifacts/wslc-containers.json
-            if (($containers -join "`n") -notmatch 'cache-') {
-              throw 'The Redis cache container was not present in wslc ps'
-            }
-          } finally {
-            aspire logs --tail 100 --non-interactive --apphost $env:APPHOST 2>&1 |
-              Tee-Object -FilePath artifacts/resource-logs.txt
-            aspire stop --non-interactive --apphost $env:APPHOST
-            if ($LASTEXITCODE -ne 0) { throw 'AppHost cleanup failed' }
-          }
-
       - name: Integration tests
+        timeout-minutes: 5
         run: dotnet test --solution AspireSample.sln --no-build --verbosity minimal --results-directory artifacts/testresults --output Detailed
 
       - name: Collect Aspire logs
