@@ -18,6 +18,7 @@ jobs:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      WSL_UTF8: '1'
 
     steps:
       - uses: actions/checkout@v7
@@ -90,11 +91,8 @@ jobs:
       - name: Trust development certificate
         timeout-minutes: 2
         run: |
-          $certificatePath = Join-Path $env:RUNNER_TEMP 'aspire-dev-cert.pem'
-          dotnet dev-certs https --export-path $certificatePath --format PEM
-          if ($LASTEXITCODE -ne 0) { throw 'Development certificate export failed' }
-          # Import into the machine store to avoid the current-user trust dialog.
-          Import-Certificate -FilePath $certificatePath -CertStoreLocation Cert:\LocalMachine\Root -Confirm:$false
+          aspire certs trust --non-interactive --log-level Debug
+          if ($LASTEXITCODE -ne 0) { throw "Aspire certificate trust failed: $LASTEXITCODE" }
           dotnet dev-certs https --check --trust
           if ($LASTEXITCODE -ne 0) { throw 'Development certificate is not trusted' }
 
