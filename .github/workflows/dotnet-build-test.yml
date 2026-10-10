@@ -91,8 +91,12 @@ jobs:
       - name: Trust development certificate
         timeout-minutes: 2
         run: |
-          aspire certs trust --non-interactive --log-level Debug
-          if ($LASTEXITCODE -ne 0) { throw "Aspire certificate trust failed: $LASTEXITCODE" }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'aspire-dev-cert.pem'
+          dotnet dev-certs https --export-path $certificatePath --format PEM
+          if ($LASTEXITCODE -ne 0) { throw 'Development certificate export failed' }
+          # Aspire certs trust --non-interactive leaves fresh Windows certificates untrusted.
+          # Import into the machine store to avoid the current-user trust dialog.
+          Import-Certificate -FilePath $certificatePath -CertStoreLocation Cert:\LocalMachine\Root -Confirm:$false
           dotnet dev-certs https --check --trust
           if ($LASTEXITCODE -ne 0) { throw 'Development certificate is not trusted' }
 
