@@ -1,0 +1,136 @@
+name: Dotnet Build and Test
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build and Test with WSL Containers
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      APPHOST: AspireSample.AppHost/AspireSample.AppHost.csproj
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: WSL diagnostics before upgrading
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          Write-Host 'wsl --version (before upgrade)'
+          wsl --version
+          Write-Host "wsl --version exit code: $LASTEXITCODE"
+          $wslcCommand = Get-Command wslc -ErrorAction SilentlyContinue
+          Write-Host "Get-Command wslc exists: $($null -ne $wslcCommand)"
+          if ($wslcCommand) {
+            $wslcCommand | Format-List Name, Source, Version
+            Write-Host 'wslc version (before upgrade)'
+            wslc version
+            Write-Host "wslc version exit code: $LASTEXITCODE"
+          } else {
+            Write-Host 'wslc version: unavailable before upgrade'
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install prerelease WSL
+        run: |
+          wsl --update --pre-release --web-download
+          if ($LASTEXITCODE -ne 0) { throw "WSL upgrade failed: $LASTEXITCODE" }
+          wsl --version
+          if ($LASTEXITCODE -ne 0) { throw "WSL version check failed: $LASTEXITCODE" }
+          $wslDirectory = Join-Path $env:ProgramFiles 'WSL'
+          $env:PATH = "$wslDirectory;$env:PATH"
+          $wslDirectory | Out-File $env:GITHUB_PATH -Append
+          Get-Command wslc | Format-List Name, Source, Version
+          wslc version
+          if ($LASTEXITCODE -ne 0) { throw "WSLc version check failed: $LASTEXITCODE" }
+          wslc info
+          if ($LASTEXITCODE -ne 0) { throw "WSLc runtime check failed: $LASTEXITCODE" }
+
+      - name: Install latest daily Aspire CLI
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'aspire-install.ps1'
+          Invoke-WebRequest https://aspire.dev/install.ps1 -OutFile $installer
+          & $installer -Quality dev -SkipPath
+          if ($LASTEXITCODE -ne 0) { throw "Aspire installation failed: $LASTEXITCODE" }
+          $cliDirectory = Join-Path $env:USERPROFILE '.aspire/bin'
+          $cliPath = Join-Path $cliDirectory 'aspire.exe'
+          $cliDirectory | Out-File $env:GITHUB_PATH -Append
+          "AspireCliPath=$cliPath" | Out-File $env:GITHUB_ENV -Append
+          & $cliPath --version
+          if ($LASTEXITCODE -ne 0) { throw "Aspire version check failed: $LASTEXITCODE" }
+
+      - name: Restore
+        run: |
+          New-Item -ItemType Directory -Force artifacts/binlogs | Out-Null
+          dotnet restore AspireSample.sln --verbosity minimal -bl:artifacts/binlogs/restore.binlog
+
+      - name: Trust development certificate
+        run: dotnet dev-certs https --trust
+
+      - name: Build
+        run: dotnet build AspireSample.sln --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true -bl:artifacts/binlogs/build.binlog
+
+      - name: Start AppHost and verify WSL containers
+        run: |
+          try {
+            aspire start --non-interactive --no-build --apphost $env:APPHOST
+            if ($LASTEXITCODE -ne 0) { throw "AppHost startup failed: $LASTEXITCODE" }
+            & (Join-Path $env:USERPROFILE '.aspire/bundle/dcp/dcp.exe') version
+            aspire wait cache --timeout 120 --non-interactive --apphost $env:APPHOST
+            if ($LASTEXITCODE -ne 0) { throw 'Redis did not become healthy' }
+            aspire wait webfrontend --timeout 120 --non-interactive --apphost $env:APPHOST
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend did not become healthy' }
+            aspire describe --non-interactive --apphost $env:APPHOST
+            wslc ps --no-trunc
+            if ($LASTEXITCODE -ne 0) { throw 'wslc ps failed' }
+            $containers = wslc ps --format json
+            if ($LASTEXITCODE -ne 0) { throw 'wslc ps --format json failed' }
+            $containers | Set-Content artifacts/wslc-containers.json
+            if (($containers -join "`n") -notmatch 'cache-') {
+              throw 'The Redis cache container was not present in wslc ps'
+            }
+          } finally {
+            aspire logs --tail 100 --non-interactive --apphost $env:APPHOST 2>&1 |
+              Tee-Object -FilePath artifacts/resource-logs.txt
+            aspire stop --non-interactive --apphost $env:APPHOST
+            if ($LASTEXITCODE -ne 0) { throw 'AppHost cleanup failed' }
+          }
+
+      - name: Integration tests
+        run: dotnet test --solution AspireSample.sln --no-build --verbosity minimal --results-directory artifacts/testresults --output Detailed
+
+      - name: Collect Aspire logs
+        if: always()
+        run: |
+          $logs = Join-Path $env:USERPROFILE '.aspire/logs'
+          if (Test-Path $logs) {
+            Copy-Item -LiteralPath $logs -Destination artifacts/aspire-logs -Recurse -Force
+          }
+          wsl --version
+          $wslcCommand = Get-Command wslc -ErrorAction SilentlyContinue
+          if ($wslcCommand) { wslc version; wslc ps --all }
+          $global:LASTEXITCODE = 0
+
+      - name: Upload diagnostics and test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-diagnostics
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.aspire/
+.aspire-home/
+.dotnet-home/
+.nuget-packages/
+*.user
+*.suo
+TestResults/
+artifacts/
