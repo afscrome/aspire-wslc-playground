@@ -64,38 +64,19 @@ jobs:
       - name: Install latest daily Aspire CLI
         timeout-minutes: 10
         run: |
-          $installer = Join-Path $env:RUNNER_TEMP 'aspire-install.ps1'
-          Invoke-WebRequest https://aspire.dev/install.ps1 -OutFile $installer -MaximumRetryCount 3 -RetryIntervalSec 5
-          $PSNativeCommandUseErrorActionPreference = $false
-          $installed = $false
-          for ($attempt = 1; $attempt -le 5; $attempt++) {
-            Write-Host "Installing latest daily Aspire CLI: attempt $attempt of 5"
-            try {
-              # Mutable daily ZIP/checksum redirects can point to different builds.
-              # Resolve the newest daily package and let the official installer use matching versioned URLs.
-              $feed = Invoke-RestMethod 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json' -MaximumRetryCount 3 -RetryIntervalSec 5
-              $packageBase = ($feed.resources | Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' } | Select-Object -First 1).'@id'
-              $versions = Invoke-RestMethod "${packageBase}aspire.cli/index.json" -MaximumRetryCount 3 -RetryIntervalSec 5
-              $latestDaily = $versions.versions | Sort-Object { [System.Management.Automation.SemanticVersion]$_ } -Descending | Select-Object -First 1
-              if (-not $latestDaily) { throw 'No daily Aspire CLI version was found' }
-              Write-Host "Latest daily Aspire CLI: $latestDaily"
-              # A child process lets installer errors/exit statements return to this retry loop.
-              & pwsh -NoProfile -File $installer -Version $latestDaily -SkipPath
-              if ($LASTEXITCODE -eq 0) {
-                $installed = $true
-                break
-              }
-              Write-Warning "Aspire installer exited with code $LASTEXITCODE."
-            } catch {
-              Write-Warning "Aspire installation attempt failed: $_"
-            }
-            if ($attempt -lt 5) {
-              Write-Warning 'Retrying latest daily Aspire installation in 15 seconds.'
-              Start-Sleep -Seconds 15
-            }
-          }
-          if (-not $installed) { throw 'Aspire installation failed after 5 attempts' }
+          $feed = Invoke-RestMethod 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json'
+          $packageBase = ($feed.resources | Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' } | Select-Object -First 1).'@id'
+          $versions = Invoke-RestMethod "${packageBase}aspire.cli/index.json"
+          $latestDaily = $versions.versions | Sort-Object { [System.Management.Automation.SemanticVersion]$_ } -Descending | Select-Object -First 1
+          if (-not $latestDaily) { throw 'No daily Aspire CLI version was found' }
+          Write-Host "Latest daily Aspire CLI: $latestDaily"
+          $archivePath = Join-Path $env:RUNNER_TEMP 'aspire-cli-win-x64.zip'
+          $archiveUrl = "https://ci.dot.net/public/aspire/$latestDaily/aspire-cli-win-x64-$latestDaily.zip"
+          Write-Host "Downloading Aspire directly from $archiveUrl"
+          Invoke-WebRequest $archiveUrl -OutFile $archivePath
           $cliDirectory = Join-Path $env:USERPROFILE '.aspire/bin'
+          New-Item -ItemType Directory -Force $cliDirectory | Out-Null
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $cliDirectory -Force
           $cliPath = Join-Path $cliDirectory 'aspire.exe'
           $cliDirectory | Out-File $env:GITHUB_PATH -Append
           "AspireCliPath=$cliPath" | Out-File $env:GITHUB_ENV -Append
