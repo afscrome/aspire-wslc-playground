@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AspireUseCliBundle>true</AspireUseCliBundle>
+    <AspireCliInvocationMode>Dnx</AspireCliInvocationMode>
+    <_AspireCliDnxPackageReference>aspire.cli@17.0.0-preview.*</_AspireCliDnxPackageReference>
     <UserSecretsId>e0211187-1aa5-4d8e-9e6f-1cdbe90884ed</UserSecretsId>
   </PropertyGroup>
 
