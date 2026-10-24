@@ -6,7 +6,7 @@ A sample .NET Aspire application with a Blazor frontend, API service, Redis cach
 
 ## Aspire configuration
 
-- The AppHost uses the Aspire CLI bundle (`AspireUseCliBundle=true`).
+- The AppHost uses the Aspire CLI bundle (`AspireUseCliBundle=true`) and configures DNX resolution through MSBuild (`AspireCliInvocationMode=Dnx`, `_AspireCliDnxPackageReference=aspire.cli@17.0.0-preview.*`). The `Aspire.Cli` package is sourced from the public .NET preview feed in `nuget.config`.
 - `ASPIRE_CONTAINER_RUNTIME` is set through `IConfiguration` in `AspireSample.AppHost/AppHost.cs` to select WSL Containers (`wslc`).
 - Aspire packages and the AppHost SDK are pinned to 13.6.1, the latest public stable release available when this sample was created. Aspire 15.6.1 was not available from the public NuGet feed.
 
@@ -40,8 +40,8 @@ Validation passed on 2026-10-10 using the existing installed CLI `17.0.0-preview
 
 ## Windows GitHub Actions
 
-The Windows-only CI workflow adapts the reusable workflow structure from [aspire-dotnet-jwts](https://github.com/afscrome/aspire-dotnet-jwts/blob/main/.github/workflows/ci.yml). It logs `wsl --version`, whether `Get-Command wslc` succeeds, and `wslc version` before upgrading. Each run installs prerelease WSL and the latest daily Aspire CLI, restores and builds the solution, and runs the integration tests. The tests manage their own AppHost lifecycle. Logs and build diagnostics are uploaded even when a step fails.
+The Windows-only CI workflow adapts the reusable workflow structure from [aspire-dotnet-jwts](https://github.com/afscrome/aspire-dotnet-jwts/blob/main/.github/workflows/ci.yml). It logs `wsl --version`, whether `Get-Command wslc` succeeds, and `wslc version` before upgrading. Each run installs .NET 11 Preview 2 and stable WSL, then restores and builds the solution and runs the integration tests. The AppHost obtains its configured CLI package through DNX during orchestration. The tests manage their own AppHost lifecycle. Logs and build diagnostics are uploaded even when a step fails.
 
-Daily CLI installation resolves the newest `Aspire.Cli` version from Microsoft's daily NuGet feed, downloads that version's Windows ZIP directly from Microsoft's build storage, and extracts it into the runner's normal Aspire installation directory. There are no installation retries or checksum validation. `WSL_UTF8=1` is set for all steps. The development certificate is exported and imported into the runner's machine root store to avoid the Windows user-store confirmation dialog, then independently checked for trust.
+`WSL_UTF8=1` is set for all steps. The development certificate is exported and imported into the runner's machine root store to avoid the Windows user-store confirmation dialog, then independently checked for trust.
 
 An [experiment on a fresh Windows agent](https://github.com/afscrome/aspire-wslc-playground/actions/runs/38078614351) showed that `aspire certs trust --non-interactive` returns promptly but leaves the certificate untrusted. It warned that interactive trust was required, then misleadingly printed a success message and exited 0. `dotnet dev-certs https --check --trust` correctly failed, so CI retains the machine-store import.

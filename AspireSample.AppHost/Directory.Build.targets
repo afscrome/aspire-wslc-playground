@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <_AspireCliDnxPackageReference Condition="'$(MSBuildProjectName)' == 'AspireSample.AppHost'">aspire.cli@17.0.0-preview.*</_AspireCliDnxPackageReference>
+  </PropertyGroup>
+</Project>
